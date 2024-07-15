@@ -41,6 +41,13 @@ To get started with Resume Analyzer, follow these steps:
     pip install -r requirements.txt
     ```
 
+4. **Add a .env file:**
+     ```
+     #.env file
+     GROQ_API_KEY={API KEY HERE}
+     GIHUB_ACCESS_TOKEN={ACESS TOKEN HERE}
+     ```
+
 4. **Run the application:**
 
     ```bash
