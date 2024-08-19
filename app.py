@@ -55,12 +55,22 @@ def display_card(name, data):
     with st.expander(f"{name} - Analysis", expanded=False):
         df = pd.DataFrame(data[name])
         csv = df.to_csv(index = False).encode('utf-8')
-        avg_llm_score = df['LLM score'].mean()
-        avg_binary_score = df['Binary score'].mean()
+
+        mean_df = df.groupby('Importance')['LLM score'].mean()
+
+        div_length = len(mean_df)
+        div_weight = 2 / (div_length * (div_length+1))
+
+        print(div_weight, div_length)
+        
+        print(mean_df.loc['High'] * (div_weight * div_length))
+        print(0.0 if 'Medium' not in mean_df else mean_df.loc['Medium'] * (div_weight * (div_length-1)))
+        print(0.0 if 'Low' not in mean_df else mean_df.loc['Low'] * (div_weight * 1))
+
+        avg_llm_score = mean_df.loc['High'] * (div_weight * div_length) + (0.0 if 'Medium' not in mean_df else mean_df.loc['Medium'] * (div_weight * (div_length-1))) + (0.0 if 'Low' not in mean_df else mean_df.loc['Low'] * (div_weight * 1))
 
 
-        st.write(f"Average LLM Score: {avg_llm_score:.2f}")
-        st.write(f"Average Binary Score: {avg_binary_score:.2f}")
+        st.write(f"Average Score: {avg_llm_score:.2f}")
         st.download_button(
             label = ">Download as csv file", 
             data = csv, 

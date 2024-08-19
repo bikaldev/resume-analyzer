@@ -1,7 +1,6 @@
 import os
 import shutil
 import re
-import json
 
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter, CharacterTextSplitter
@@ -31,12 +30,40 @@ Example: 'https://github.com/username'""")
 
 class Questions(BaseModel):
     """
-    Pydantic model representing questions derived from a job description.
+    A Pydantic model representing a set of categorized questions based on a job description.
+
+    This model defines three categories of questions that help assess a candidate's suitability 
+    for a job role. The categories are:
+
+    - `must_have_questions`: Critical requirements that the candidate must fulfill.
+    - `should_have_questions`: Important, but not mandatory, requirements that highly impact the evaluation.
+    - `good_to_have_questions`: Optional attributes that can make a candidate stand out but are not essential.
+
+    Example:
+    - If the requirement states that `the candidate must have 2+ years of professional experience in Web Development`, then the query should be `Does the candidate have 2+ years of professional experience in Web Development?`
+    - If the requirement states that `the candidate with CCNA certifications will be preferred`, then the query should be `Is the candidate CCNA certified?`.
 
     Attributes:
-        questions (list[str]): A list of queries based on the job description.
+        must_have_questions (list[str]): 
+            A list of queries focusing on the most critical requirements from the job description. 
+            These are the essential qualifications or skills that the candidate must possess.
+        
+        should_have_questions (list[str]): 
+            A list of queries representing the important, but not absolutely necessary, 
+            requirements from the job description. Meeting these requirements can lead to 
+            a higher evaluation but they are not mandatory.
+        
+        good_to_have_questions (list[str]): 
+            A list of queries representing additional skills or qualifications that are desirable 
+            but not required. Candidates with these attributes will be preferred, although 
+            they are not strictly necessary for the role.
     """
-    questions: list[str] = Field(description="""This property should contain a list of queries based on the job description. Example: 'Does the candidate have 3+ years of experience?'""")
+    
+    must_have_questions: list[str] = Field(description="""This property should contain a list of queries based on the job description which describes the requirements that the candidate must have. It represents those requirements that are most critical for judging the candidate.""")
+    
+    should_have_questions: list[str] = Field(description="""This property should contain a list of queries based on the job description which describes the requirements that the candidate should have for the candidate to be judged highly but not an absolute requirement. These are the second most important criteria.""")
+    
+    good_to_have_questions: list[str] = Field(description="""This property should contain a list of queries based on the job description which describes the requirements that the candidate can have to make their application stand apart. These are not necessary as per the job description but the candidates with these will be preferred.""")
 
 
 class Answer(BaseModel):
@@ -44,13 +71,10 @@ class Answer(BaseModel):
     Pydantic model representing answers to questions about a candidate's resume.
 
     Attributes:
-        answer (str): The answer to the question asked.
-        score (int): A number (0 or 1) based on the answer.
+        score (float): A number between 0.0 to 1.0 representing the suitability of the context for the question.
         summary (str): A summarized version of the context provided in the prompt.
     """
-    answer: str = Field(description="""This property should contain the answer of the question asked.Should be either 'Yes' or 'No'""")
-    score: int = Field(description="""This property should contain a number between 0 and 1 based on the suitability of the context for the question.""")
-    binary_score: int = Field(description="""This property should contain a number 0 or 1 corresponding to the answer 'No' or 'Yes'.""")
+    score: float = Field(description="""This property should contain a number between 0 and 1 based on the suitability of the context for the question.""")
     summary: str = Field(description="""This property should contain a summarized version of the context provided in the prompt.""")
 
 
@@ -140,7 +164,7 @@ class ResumeAgent:
         """
         output_parser = JsonOutputParser(pydantic_object=Questions)
 
-        template = """List the requirements mentioned in the job description as a descriptive question. \n job description: {job_description}  \n format instruction: {format_instructions}:"""
+        template = """List the requirements mentioned in the job description as a descriptive question. Ignore soft skills that will generally not be included in a resume. \n job description: {job_description}  \n format instruction: {format_instructions}:"""
 
         prompt = ChatPromptTemplate.from_template(template)
 
@@ -304,7 +328,6 @@ class ResumeAgent:
         for doc_link, file_name in zip(doc_links, self.pdf_cv):
             if doc_link['github_link'] is not None:
                 text, metadata = self.__scrape_links(doc_link['github_link'], github_link=True)
-                print(f"file: {file_name}, text: {text}")
                 if text is not None:
                     try:
                         self.__embed_text(self.__fn_to_collection(file_name), text, metadata)
@@ -325,9 +348,8 @@ class ResumeAgent:
                 embedding_function=self.embedding_model
             ).as_retriever()
             
-            print(f'Made retriever for {file_name}')
             
-            for question in result['questions']:
+            for question in result['must_have_questions']:
                 answer = self.qa_chain.invoke(
                     {
                         "retriever": retriever,
@@ -336,11 +358,42 @@ class ResumeAgent:
                 )
 
                 yield file_name, {
-                    'question': question,
-                    'answer': answer['answer'],
-                    'remark': answer['summary'],
+                    'Question': question,
+                    'Importance': 'High',
+                    'Remark': answer['summary'],
                     'LLM score': answer['score'],
-                    'Binary score': answer['binary_score'],
+                }
+            
+            for question in result['should_have_questions']:
+                answer = self.qa_chain.invoke(
+                    {
+                        "retriever": retriever,
+                        "question": question
+                    }
+                )
+
+                yield file_name, {
+                    'Question': question,
+                    'Importance': 'Medium',
+                    'Remark': answer['summary'],
+                    'LLM score': answer['score'],
+                }
+            
+            for question in result['good_to_have_questions']:
+                answer = self.qa_chain.invoke(
+                    {
+                        "retriever": retriever,
+                        "question": question
+                    }
+                )
+            
+                total_score += answer['score'] * (1/6)
+
+                yield file_name, {
+                    'Question': question,
+                    'Importance': 'Low',
+                    'Remark': answer['summary'],
+                    'LLM score': answer['score'],
                 }
 
     def __del__(self):
