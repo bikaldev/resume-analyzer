@@ -4,6 +4,7 @@ bs4==0.0.2
 chromadb==0.5.3
 huggingface-hub==0.23.4
 langchain==0.2.5
+sqlite3 == 3.35.0
 langchain-chroma==0.1.1
 langchain-community==0.2.5
 langchain-core==0.2.9
